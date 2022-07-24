@@ -160,6 +160,26 @@ fun compileNativeBridgesTask(os: OS, arch: Arch): TaskProvider<CompileSkikoCppTa
                     *skiaPreprocessorFlags(OS.IOS),
                 ))
             }
+            OS.TVOS -> {
+                val sdkRoot = "/Applications/Xcode.app/Contents/Developer/Platforms"
+                val tvosArchFlags = when (arch) {
+                    Arch.Arm64 -> arrayOf(
+                        "-target", "arm64-apple-tvos",
+                        "-isysroot", "$sdkRoot/AppleTVOS.platform/Developer/SDKs/AppleTVOS.sdk"
+                    )
+                    Arch.X64 -> arrayOf(
+                        "-target", "x86_64-apple-tvos-simulator",
+                        "-isysroot", "$sdkRoot/AppleTVSimulator.platform/Developer/SDKs/AppleTVSimulator.sdk"
+                    )
+                    else -> throw GradleException("Unsupported arch: $arch")
+                }
+                flags.set(listOf(
+                    *tvosArchFlags,
+                    *buildType.clangFlags,
+                    "-stdlib=libc++",
+                    *skiaPreprocessorFlags(OS.TVOS),
+                ))
+            }
             OS.MacOS -> {
                 flags.set(listOf(
                     *buildType.clangFlags,
@@ -245,6 +265,8 @@ kotlin {
     if (supportNative) {
         configureNativeTarget(OS.MacOS, Arch.X64, macosX64())
         configureNativeTarget(OS.MacOS, Arch.Arm64, macosArm64())
+        configureNativeTarget(OS.TVOS, Arch.X64, tvosX64())
+        configureNativeTarget(OS.TVOS, Arch.Arm64, tvosArm64())
         configureNativeTarget(OS.Linux, Arch.X64, linuxX64())
         configureNativeTarget(OS.IOS, Arch.Arm64, iosArm64())
         configureNativeTarget(OS.IOS, Arch.X64, iosX64())
@@ -361,16 +383,16 @@ kotlin {
                 val darwinTest by creating {
                     dependsOn(nativeTest)
                 }
-                val macosMain by creating {
-                    dependsOn(darwinMain)
-                }
-                val macosTest by creating {
-                    dependsOn(darwinTest)
-                }
                 val iosMain by creating {
                     dependsOn(darwinMain)
                 }
                 val iosTest by creating {
+                    dependsOn(darwinTest)
+                }
+                val macosMain by creating {
+                    dependsOn(darwinMain)
+                }
+                val macosTest by creating {
                     dependsOn(darwinTest)
                 }
                 val macosX64Main by getting {
@@ -396,6 +418,24 @@ kotlin {
                 }
                 val iosArm64Test by getting {
                     dependsOn(iosTest)
+                }
+                val tvosMain by creating {
+                    dependsOn(darwinMain)
+                }
+                val tvosTest by creating {
+                    dependsOn(darwinTest)
+                }
+                val tvosX64Main by getting {
+                    dependsOn(tvosMain)
+                }
+                val tvosX64Test by getting {
+                    dependsOn(tvosTest)
+                }
+                val tvosArm64Main by getting {
+                    dependsOn(tvosMain)
+                }
+                val tvosArm64Test by getting {
+                    dependsOn(tvosTest)
                 }
             }
         }
@@ -426,7 +466,7 @@ fun configureNativeTarget(os: OS, arch: Arch, target: KotlinNativeTarget) {
                     "-linker-option", "-framework", "-linker-option", "CoreText",
                     "-linker-option", "-framework", "-linker-option", "CoreServices"
                 )
-                OS.IOS -> mutableListOf("-linker-option", "-framework", "-linker-option", "Metal",
+                OS.IOS, OS.TVOS -> mutableListOf("-linker-option", "-framework", "-linker-option", "Metal",
                     "-linker-option", "-framework", "-linker-option", "CoreGraphics",
                     "-linker-option", "-framework", "-linker-option", "UIKit",
                     "-linker-option", "-framework", "-linker-option", "CoreText")
@@ -472,7 +512,7 @@ fun configureNativeTarget(os: OS, arch: Arch, target: KotlinNativeTarget) {
                 executable = "ar"
                 argumentProviders.add { listOf("-crs", staticLib) }
             }
-            OS.MacOS, OS.IOS -> {
+            OS.MacOS, OS.IOS, OS.TVOS -> {
                 executable = "libtool"
                 argumentProviders.add { listOf("-static", "-o", staticLib) }
             }
@@ -537,6 +577,11 @@ fun skiaPreprocessorFlags(os: OS): Array<String> {
         )
         OS.IOS -> listOf(
             "-DSK_BUILD_FOR_IOS",
+            "-DSK_SHAPER_CORETEXT_AVAILABLE",
+            "-DSK_METAL"
+        )
+        OS.TVOS -> listOf(
+            "-DSK_BUILD_FOR_TVOS",
             "-DSK_SHAPER_CORETEXT_AVAILABLE",
             "-DSK_METAL"
         )
@@ -840,7 +885,7 @@ fun createCompileJvmBindingsTask(
                 "-fPIC"
             )
         }
-        OS.Wasm, OS.IOS -> error("Should not reach here")
+        OS.Wasm, OS.IOS, OS.TVOS -> error("Should not reach here")
     }
 
     flags.set(
@@ -953,7 +998,7 @@ fun createLinkJvmBindings(
                 )
                 linker.set(androidClangFor(targetArch))
             }
-            OS.Wasm, OS.IOS -> {
+            OS.Wasm, OS.IOS, OS.TVOS -> {
                 throw GradleException("This task shalln't be used with $targetOs")
             }
         }
